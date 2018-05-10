@@ -293,7 +293,7 @@ var sequenceServer = `220 localhost go-smtpd
 503 Out of sequence command
 250 Okay, I'll believe you for now
 503 Out of sequence command
-501 Bad: unrecognized command
+250 Okay
 250 Okay
 250 Okay, I'll believe you for now
 550 Bad address

@@ -1,3 +1,9 @@
+all: fmt test
+
+fmt:
+	gofmt -w *.go
+	go vet -v ./
+
 test:
 	go test
 

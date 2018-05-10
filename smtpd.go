@@ -35,6 +35,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/ghetzel/go-stockutil/log"
 )
 
 // The time format we log messages in.
@@ -343,8 +345,8 @@ var DefaultLimits = Limits{
 	MsgInput: 10 * time.Minute,
 	ReplyOut: 2 * time.Minute,
 	TLSSetup: 4 * time.Minute,
-	MsgSize:  5 * 1024 * 1024,
-	BadCmds:  5,
+	MsgSize:  16 * 1024 * 1024,
+	BadCmds:  64,
 	NoParams: true,
 }
 
@@ -385,27 +387,20 @@ type Config struct {
 // is a pointer and so its fields should not be altered unless you
 // know what you're doing and it's your Limits to start with.
 type Conn struct {
-	conn   net.Conn
-	lr     *io.LimitedReader // wraps conn as a reader
-	rdr    *textproto.Reader // wraps lr
-	logger io.Writer
-
-	Config Config // Connection configuration
-
+	Config        Config              // Connection configuration
+	TLSOn         bool                // TLS is on in this connection
+	TLSState      tls.ConnectionState // TLS connection state
+	conn          net.Conn
+	lr            *io.LimitedReader // wraps conn as a reader
+	rdr           *textproto.Reader // wraps lr
+	logger        io.Writer
 	state         conState
-	badcmds       int  // count of bad commands so far
-	authenticated bool // true after successful auth dialog
-
-	// queued event returned by a forthcoming Next call
-	nextEvent *EventInfo
-
-	// used for state tracking for Accept()/Reject()/Tempfail().
-	curcmd  Command
-	replied bool
-	nstate  conState // next state if command is accepted.
-
-	TLSOn    bool                // TLS is on in this connection
-	TLSState tls.ConnectionState // TLS connection state
+	badcmds       int        // count of bad commands so far
+	authenticated bool       // true after successful auth dialog
+	nextEvent     *EventInfo // queued event returned by a forthcoming Next call
+	curcmd        Command    // used for state tracking for Accept()/Reject()/Tempfail().
+	replied       bool
+	nstate        conState // next state if command is accepted.
 }
 
 // An Event is the sort of event that is returned by Conn.Next().
@@ -437,6 +432,7 @@ func (c *Conn) log(dir string, format string, elems ...interface{}) {
 	}
 	msg := fmt.Sprintf(format, elems...)
 	c.logger.Write([]byte(fmt.Sprintf("%s %s\n", dir, msg)))
+	log.Debugf("[smtp] %v: %v", dir, msg)
 }
 
 // This assumes we're working with a non-Nagle connection. It may not work
@@ -888,7 +884,9 @@ func (c *Conn) Next() EventInfo {
 		res := ParseCmd(line)
 		if res.Cmd == BadCmd {
 			c.badcmds++
-			c.reply("501 Bad: %s", res.Err)
+			// c.reply("501 Bad: %s", res.Err)
+			log.Warningf("[smtp] Bad Command: %v", line)
+			c.reply("250 Okay")
 			continue
 		}
 		// Is this command valid in this state at all?
